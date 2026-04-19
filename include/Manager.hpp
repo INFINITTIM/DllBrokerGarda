@@ -1,22 +1,13 @@
 #pragma once
-#include <string>
-#include <vector>
-#include <map>
+#include <unordered_map>
+#include "Message.hpp"
 
-#include "Event.hpp"
+class Manager {
+private:
+    std::unordered_map<uint32_t, interop::TFuncOpReq> handlers_;
 
-class Module;
+public:
+    bool provide(uint32_t op_id, interop::TFuncOpReq handler);
 
-class Manager{
- private: 
-    std::vector<Module*> modules;
-    std::map<uint32_t, std::vector<Module*>> subscribers;
- public:
-    void broadcast(Module* sender, const Event& event);
-
-    void add_module(Module* module);
-
-    void add_sub_module(Module* m, EventTypeID type);
-
-    void remote_sub_module(Module* module, EventTypeID type);
+    std::unique_ptr<interop::Message> request(uint32_t op_id, const interop::Message& msg);
 };

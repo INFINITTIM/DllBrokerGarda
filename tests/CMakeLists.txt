@@ -7,9 +7,9 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 add_executable(broker_tests BrokerTest.cpp)
-
-target_link_libraries(broker_tests
-    PRIVATE
+target_include_directories(broker_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(broker_tests 
+    PRIVATE 
     broker_lib
     GTest::gtest_main
 )

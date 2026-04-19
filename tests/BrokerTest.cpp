@@ -1,181 +1,56 @@
 #include <gtest/gtest.h>
-#include "../include/Module.hpp"
-#include "../include/Manager.hpp"
-#include "../include/Event.hpp"
+#include "Manager.hpp"
+#include "Arithmetic.hpp"
 
-enum class TestEvents : EventTypeID {
-    EVENT_A = 1,
-    EVENT_B = 2,
-    EVENT_C = 3
-};
-
-class TestModule : public Module {
-public:
-    int messageCount = 0;
-    std::vector<std::string> receivedMessages;
+TEST(BrokerTest, ProvideAndRequest) {
+    Manager broker;
     
-    TestModule(Manager* mgr, const std::string& name) 
-        : Module(mgr, name) {}
+    broker.provide(999, [](const interop::Message& req) {
+        return std::make_unique<interop::Message>(req.payload.data(), req.payload.size());
+    });
     
-    void read_messages() {
-        while (!inbox_message.empty()) {
-            Event ev = inbox_message.front();
-            inbox_message.pop();
-            messageCount++;
-            receivedMessages.push_back(ev.message);
-        }
-    }
-};
-
-TEST(BrokerTest, ModuleCreation) {
-    Manager mgr;
-    TestModule module(&mgr, "TestModule");
-    EXPECT_EQ(module.getName(), "TestModule");
+    uint8_t data[] = {1, 2, 3};
+    interop::Message msg(data, sizeof(data));
+    auto resp = broker.request(999, msg);
+    
+    ASSERT_NE(resp, nullptr);
+    ASSERT_EQ(resp->payload.size(), 3);
+    EXPECT_EQ(resp->payload[0], 1);
+    EXPECT_EQ(resp->payload[1], 2);
+    EXPECT_EQ(resp->payload[2], 3);
 }
 
-TEST(BrokerTest, SubscribeToEvent) {
-    Manager mgr;
-    TestModule module(&mgr, "TestModule");
-    
-    module.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    
-    TestModule publisher(&mgr, "Publisher");
-    publisher.send(static_cast<EventTypeID>(TestEvents::EVENT_A), "Test");
-    
-    module.read_messages();
-    
-    EXPECT_EQ(module.messageCount, 1);
+TEST(BrokerTest, UnknownOpReturnsNull) {
+    Manager broker;
+    interop::Message msg;
+    EXPECT_EQ(broker.request(12345, msg), nullptr);
 }
 
-TEST(BrokerTest, UnsubscribeFromEvent) {
-    Manager mgr;
-    TestModule module(&mgr, "TestModule");
+TEST(ArithmeticTest, AddPositiveNumbers) {
+    Manager broker;
+    ArithmeticServer server(&broker);
+    ArithmeticClient client(&broker);
     
-    module.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    module.unsubscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    
-    TestModule publisher(&mgr, "Publisher");
-    publisher.send(static_cast<EventTypeID>(TestEvents::EVENT_A), "Test");
-    
-    module.read_messages();
-    
-    EXPECT_EQ(module.messageCount, 0);
+    auto result = client.add(10, 5);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 15);
 }
 
-TEST(BrokerTest, MessageDeliveryToSingleSubscriber) {
-    Manager mgr;
-    TestModule publisher(&mgr, "Publisher");
-    TestModule subscriber(&mgr, "Subscriber");
+TEST(ArithmeticTest, SubPositiveNumbers) {
+    Manager broker;
+    ArithmeticServer server(&broker);
+    ArithmeticClient client(&broker);
     
-    subscriber.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    
-    publisher.send(static_cast<EventTypeID>(TestEvents::EVENT_A), "Hello!");
-    
-    subscriber.read_messages();
-    
-    EXPECT_EQ(subscriber.messageCount, 1);
-    EXPECT_EQ(subscriber.receivedMessages[0], "Hello!");
+    auto result = client.sub(10, 5);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 5);
 }
 
-TEST(BrokerTest, MessageDeliveryToMultipleSubscribers) {
-    Manager mgr;
-    TestModule publisher(&mgr, "Publisher");
-    TestModule sub1(&mgr, "Subscriber1");
-    TestModule sub2(&mgr, "Subscriber2");
-    TestModule sub3(&mgr, "Subscriber3");
+TEST(ArithmeticTest, NegativeNumbers) {
+    Manager broker;
+    ArithmeticServer server(&broker);
+    ArithmeticClient client(&broker);
     
-    sub1.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    sub2.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    sub3.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    
-    publisher.send(static_cast<EventTypeID>(TestEvents::EVENT_A), "Broadcast");
-    
-    sub1.read_messages();
-    sub2.read_messages();
-    sub3.read_messages();
-    
-    EXPECT_EQ(sub1.messageCount, 1);
-    EXPECT_EQ(sub2.messageCount, 1);
-    EXPECT_EQ(sub3.messageCount, 1);
-}
-
-TEST(BrokerTest, SenderDoesNotReceiveOwnMessage) {
-    Manager mgr;
-    TestModule module(&mgr, "Module");
-    
-    module.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    module.send(static_cast<EventTypeID>(TestEvents::EVENT_A), "Self message");
-    
-    module.read_messages();
-    
-    EXPECT_EQ(module.messageCount, 0);
-}
-
-TEST(BrokerTest, UnsubscribedModuleDoesNotReceive) {
-    Manager mgr;
-    TestModule publisher(&mgr, "Publisher");
-    TestModule nonSubscriber(&mgr, "NonSubscriber");
-    
-    publisher.send(static_cast<EventTypeID>(TestEvents::EVENT_A), "Message");
-    
-    nonSubscriber.read_messages();
-    
-    EXPECT_EQ(nonSubscriber.messageCount, 0);
-}
-
-TEST(BrokerTest, DifferentEventTypesAreIsolated) {
-    Manager mgr;
-    TestModule pub(&mgr, "Publisher");
-    TestModule subA(&mgr, "SubscriberA");
-    TestModule subB(&mgr, "SubscriberB");
-    
-    subA.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    subB.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_B));
-    
-    pub.send(static_cast<EventTypeID>(TestEvents::EVENT_A), "For A");
-    pub.send(static_cast<EventTypeID>(TestEvents::EVENT_B), "For B");
-    
-    subA.read_messages();
-    subB.read_messages();
-    
-    EXPECT_EQ(subA.messageCount, 1);
-    EXPECT_EQ(subA.receivedMessages[0], "For A");
-    
-    EXPECT_EQ(subB.messageCount, 1);
-    EXPECT_EQ(subB.receivedMessages[0], "For B");
-}
-
-TEST(BrokerTest, MultipleMessagesInQueue) {
-    Manager mgr;
-    TestModule publisher(&mgr, "Publisher");
-    TestModule subscriber(&mgr, "Subscriber");
-    
-    subscriber.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    
-    publisher.send(static_cast<EventTypeID>(TestEvents::EVENT_A), "Msg 1");
-    publisher.send(static_cast<EventTypeID>(TestEvents::EVENT_A), "Msg 2");
-    publisher.send(static_cast<EventTypeID>(TestEvents::EVENT_A), "Msg 3");
-    
-    subscriber.read_messages();
-    
-    EXPECT_EQ(subscriber.messageCount, 3);
-    EXPECT_EQ(subscriber.receivedMessages[0], "Msg 1");
-    EXPECT_EQ(subscriber.receivedMessages[1], "Msg 2");
-    EXPECT_EQ(subscriber.receivedMessages[2], "Msg 3");
-}
-
-TEST(BrokerTest, NoDuplicateSubscriptions) {
-    Manager mgr;
-    TestModule module(&mgr, "TestModule");
-    
-    module.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    module.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    module.subscribe(static_cast<EventTypeID>(TestEvents::EVENT_A));
-    
-    TestModule publisher(&mgr, "Publisher");
-    publisher.send(static_cast<EventTypeID>(TestEvents::EVENT_A), "Test");
-    
-    module.read_messages();
-    
-    EXPECT_EQ(module.messageCount, 1);
+    EXPECT_EQ(client.add(-5, 3), -2);
+    EXPECT_EQ(client.sub(0, 10), -10);
 }

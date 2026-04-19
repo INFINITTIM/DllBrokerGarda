@@ -1,30 +1,18 @@
-#include "../include/Manager.hpp"
-#include "../include/Module.hpp"
-#include <algorithm> 
+#include "Manager.hpp"
 
-void Manager::add_module(Module* module) {
-    modules.push_back(module);
+bool Manager::provide(uint32_t op_id, interop::TFuncOpReq handler) {
+    if (!handler) return false;
+    // здесь мы вохраняем обработчик в таблицу (или перезаписываем, если уже есть)
+    handlers_[op_id] = std::move(handler);
+    return true;
 }
 
-void Manager::add_sub_module(Module* m, EventTypeID type) {
-    subscribers[type].push_back(m);
-}
-
-void Manager::remote_sub_module(Module* module, EventTypeID type) {
-    auto it = subscribers.find(type);
-    if (it != subscribers.end()) {
-        auto& vec = it->second;
-        vec.erase(std::remove(vec.begin(), vec.end(), module), vec.end());
+std::unique_ptr<interop::Message> Manager::request(uint32_t op_id, const interop::Message& msg) {
+    // тут мы получается ищем обработчик по коду операции
+    auto it = handlers_.find(op_id);
+    if (it == handlers_.end()) {
+        return nullptr; // ошибка в случае если операция не найден
     }
-}
-
-void Manager::broadcast(Module* sender, const Event& event) {
-    auto it = subscribers.find(event.type);
-    if (it != subscribers.end()) {
-        for (auto* sub : it->second) {
-            if (sub != sender) {
-                sub->deliver(event);
-            }
-        }
-    }
+    // вызываем обработчик и возвращаем результат
+    return it->second(msg);
 }
