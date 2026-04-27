@@ -15,8 +15,6 @@ bool Manager::stop() {
     
     running_ = false;
     
-    handlers_.clear();
-    
     return true;
 }
 
