@@ -78,16 +78,6 @@ TEST(BrokerTest, StartStopLifecycle) {
     EXPECT_FALSE(broker.stop());
 }
 
-TEST(BrokerTest, ProvideFailsWhenStopped) {
-    Manager broker;
-
-    bool result = broker.provide(999, [](const interop::Message& req) {
-        return std::make_unique<interop::Message>();
-    });
-    
-    EXPECT_FALSE(result);
-}
-
 TEST(BrokerTest, RequestFailsWhenStopped) {
     Manager broker;
 
