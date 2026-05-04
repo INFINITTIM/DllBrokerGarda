@@ -1,0 +1,8 @@
+build/
+*.o
+*.a
+*.so
+*.exe
+demo
+broker_tests
+app
